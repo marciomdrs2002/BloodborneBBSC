@@ -183,9 +183,16 @@ public static class Choices
 		new Choice("Vivid (default)", "1")
 	};
 
-	public static readonly Choice[] OnlineServers = new Choice[1]
+	public static readonly Choice[] OnlineServers = new Choice[2]
 	{
-		new Choice("The Hunter's Dream", "huntersdream")
+		new Choice("The Hunter's Dream", "huntersdream"),
+		new Choice("BBSC local server", Bbsc.ServerKey, "Co-op with friends over Tailscale: one of you hosts, no public server")
+	};
+
+	public static readonly Choice[] BbscRoles = new Choice[2]
+	{
+		new Choice("Host on this PC", "host"),
+		new Choice("Join a host", "join")
 	};
 
 	public static readonly Choice[] SignTimeout = new Choice[3]

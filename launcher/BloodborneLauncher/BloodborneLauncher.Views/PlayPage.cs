@@ -105,6 +105,35 @@ public sealed class PlayPage : LauncherPage
 		_playStatus.VerticalAlignment = VerticalAlignment.Center;
 		Grid.SetColumn(_playStatus, 1);
 		grid.Children.Add(_playStatus);
+		// How Play starts the game, without going to the Online page.
+		grid.ColumnDefinitions.Add(new ColumnDefinition
+		{
+			Width = GridLength.Auto
+		});
+		_mode = new ComboBox
+		{
+			Width = 250.0,
+			VerticalAlignment = VerticalAlignment.Center,
+			ToolTip = "How Play starts the game. The Online page has each server's settings."
+		};
+		foreach (Choice choice in PlayModes)
+		{
+			_mode.Items.Add(new ComboBoxItem
+			{
+				Content = choice.Label,
+				Tag = choice.Value
+			});
+		}
+		_mode.SelectionChanged += delegate
+		{
+			if (!_showingMode && _mode.SelectedItem is ComboBoxItem { Tag: string value })
+			{
+				SetPlayMode(value);
+			}
+		};
+		Grid.SetColumn(_mode, 2);
+		grid.Children.Add(_mode);
+		ShowPlayMode();
 		stackPanel.Children.Add(grid);
 		border.Child = stackPanel;
 		base.Body.Children.Add(border);
@@ -259,6 +288,47 @@ public sealed class PlayPage : LauncherPage
 	public override void OnShown()
 	{
 		Refresh();
+		ShowPlayMode();
+	}
+
+	// ---------------------------------------------------------------- play mode
+
+	private static readonly Choice[] PlayModes = new Choice[3]
+	{
+		new Choice("Offline", "offline"),
+		new Choice("Online · The Hunter's Dream", "huntersdream"),
+		new Choice("Online · BBSC co-op", Bbsc.ServerKey)
+	};
+
+	private ComboBox _mode;
+
+	private bool _showingMode;
+
+	private static string PlayMode()
+	{
+		if (LauncherPage.Ini.Get("online_enabled") != "1")
+		{
+			return "offline";
+		}
+		return Bbsc.Selected(LauncherPage.S) ? Bbsc.ServerKey : "huntersdream";
+	}
+
+	private void ShowPlayMode()
+	{
+		_showingMode = true;
+		_mode.SelectedIndex = Choices.IndexOf(PlayModes, PlayMode());
+		_showingMode = false;
+	}
+
+	/// <summary>Play online on or off, and which server: what the Online page's first two rows set.</summary>
+	private static void SetPlayMode(string mode)
+	{
+		LauncherPage.Ini.Set("online_enabled", (mode == "offline") ? "0" : "1");
+		if (mode != "offline")
+		{
+			LauncherPage.S.Set("bbsc_online_server", mode);
+		}
+		LauncherPage.Ws.SaveSoon();
 	}
 
 	private void Refresh()

@@ -381,6 +381,12 @@ public static class GameEnvironment
 				dictionary3["BB_THD_ONLINE_ID"] = text3;
 			}
 		}
+		// The BBSC local server: the host's shadNet over Tailscale and the local game server.
+		IniFile ini = Workspace.Current.Ini;
+		if (Bbsc.Selected(s) && ini.Get("online_enabled") == "1")
+		{
+			Bbsc.ApplyEnvironment(s, ini, dictionary3);
+		}
 		dictionary3["BB_CLIENT_VERSION"] = "shadPS4 Awakenchan/v0.20.0";
 		string[] array = s.Str("extra_env").Split(' ', StringSplitOptions.RemoveEmptyEntries);
 		foreach (string text4 in array)

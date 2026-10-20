@@ -210,6 +210,11 @@ public class MainWindow : FluentWindow, IComponentConnector
 			}
 		};
 		base.Closing += OnClosing;
+		base.Closed += delegate
+		{
+			Bbsc.StopAll(); // the BBSC servers live as long as the launcher
+		};
+		SetupHostingChip();
 	}
 
 	private async Task PlayDirectAsync()
@@ -558,6 +563,96 @@ public class MainWindow : FluentWindow, IComponentConnector
 		}
 	}
 
+	// ---------------------------------------------------------------- BBSC hosting indicator
+
+	private System.Windows.Controls.Button _hostingChip;
+
+	private System.Windows.Controls.TextBlock _hostingText;
+
+	private bool _hostingCheck;
+
+	/// <summary>In the title bar while this PC hosts the BBSC local server: where, and a pause that
+	/// stops it (friends in a session are disconnected).</summary>
+	private void SetupHostingChip()
+	{
+		Ellipse dot = new Ellipse
+		{
+			Width = 8.0,
+			Height = 8.0,
+			Margin = new Thickness(0.0, 0.0, 7.0, 0.0),
+			VerticalAlignment = VerticalAlignment.Center
+		};
+		dot.SetResourceReference(Shape.FillProperty, "GoodTextBrush");
+		_hostingText = new System.Windows.Controls.TextBlock
+		{
+			VerticalAlignment = VerticalAlignment.Center,
+			Margin = new Thickness(0.0, 0.0, 8.0, 0.0)
+		};
+		SymbolIcon pause = new SymbolIcon
+		{
+			Symbol = SymbolRegular.Pause24,
+			FontSize = 14.0,
+			VerticalAlignment = VerticalAlignment.Center
+		};
+		StackPanel content = new StackPanel
+		{
+			Orientation = Orientation.Horizontal
+		};
+		content.Children.Add(dot);
+		content.Children.Add(_hostingText);
+		content.Children.Add(pause);
+		_hostingChip = new System.Windows.Controls.Button
+		{
+			Style = TitlePlay.Style,
+			Content = content,
+			Margin = new Thickness(0.0, 0.0, 6.0, 0.0),
+			ToolTip = "Hosting the BBSC local server. Click to stop it: friends in a session are disconnected.",
+			Visibility = Visibility.Collapsed
+		};
+		WindowChrome.SetIsHitTestVisibleInChrome(_hostingChip, true);
+		_hostingChip.Click += async delegate
+		{
+			if (Prompt.Confirm("Stop hosting?", "Friends playing with you are disconnected. Start hosting again from the Online page, or by pressing Play.", "Stop hosting"))
+			{
+				Bbsc.StopAll();
+				Workspace.Current.Log("BBSC: hosting stopped", LogLevel.Info);
+				await Task.Delay(300);
+				await RefreshHostingChipAsync();
+			}
+		};
+		TitleTools.Children.Insert(0, _hostingChip);
+		DispatcherTimer timer = new DispatcherTimer
+		{
+			Interval = TimeSpan.FromSeconds(3.0)
+		};
+		timer.Tick += async delegate
+		{
+			await RefreshHostingChipAsync();
+		};
+		timer.Start();
+	}
+
+	private async Task RefreshHostingChipAsync()
+	{
+		if (_hostingCheck)
+		{
+			return;
+		}
+		_hostingCheck = true;
+		try
+		{
+			LauncherSettings s = Workspace.Current.Settings;
+			string host = Bbsc.Hosting(s) ? (Bbsc.TailscaleAddress() ?? "") : "";
+			bool up = host.Length > 0 && await Task.Run(() => Bbsc.Listening(host, Bbsc.ShadnetPort));
+			_hostingText.Text = "Hosting co-op · " + host;
+			_hostingChip.Visibility = up ? Visibility.Visible : Visibility.Collapsed;
+		}
+		finally
+		{
+			_hostingCheck = false;
+		}
+	}
+
 	private async void TitlePlay_Click(object sender, RoutedEventArgs e)
 	{
 		await PlayOrStopAsync();
@@ -678,8 +773,32 @@ public class MainWindow : FluentWindow, IComponentConnector
 		}
 		LauncherSettings s = ws.Settings;
 		IniFile ini = ws.Ini;
-		ini.Set("online_pool", (s.HuntersDreamToken.Length > 0 && s.Str("hd_name").Length > 0) ? "huntersdream" : "");
-		if (!HuntersDream.OnlinePaused && ini.Get("online_enabled") == "1" && ini.Get("online_pool") != "huntersdream")
+		bool bbsc = Bbsc.Selected(s) && ini.Get("online_enabled") == "1";
+		if (bbsc)
+		{
+			// BBSC: this PC's servers first (the host's shadNet, the local game server), then one
+			// sign-in outside the game so a wrong password is said here, not as a silent offline game.
+			Bbsc.ApplyIni(s, ini);
+			string name = ini.Get("online_username").Trim();
+			string problem = (name.Length == 0 || s.OnlinePassword.Length == 0)
+				? "Enter the co-op account name and password on the Online page."
+				: await Bbsc.PrepareAsync(s, delegate(string line) { ws.Log(line, LogLevel.Step); });
+			if (problem == null && await Bbsc.LoginAsync(Bbsc.HostAddress(s), name, s.OnlinePassword) is string login)
+			{
+				problem = "Signing in to the co-op server failed. " + login + "\n\nCheck the account name (capitals count) and password, or create the account on the Online page.";
+			}
+			if (problem != null)
+			{
+				Prompt.Tell("BBSC local server", problem + "\n\nOr turn \"Play online\" off to play offline.");
+				Show("online");
+				return;
+			}
+		}
+		else
+		{
+			ini.Set("online_pool", (s.HuntersDreamToken.Length > 0 && s.Str("hd_name").Length > 0) ? "huntersdream" : "");
+		}
+		if (!bbsc && !HuntersDream.OnlinePaused && ini.Get("online_enabled") == "1" && ini.Get("online_pool") != "huntersdream")
 		{
 			Prompt.Tell("Online", "Connect your Hunter's Dream account on the Online page first (with Discord, or without it).\n\nOr turn \"Play online\" off to play offline.");
 			Show("online");
@@ -839,7 +958,16 @@ public class MainWindow : FluentWindow, IComponentConnector
 				}
 			}
 		}
+		DateTime started = DateTime.Now;
 		string text5 = ws.StartGame();
+		if (text5 == null && bbsc && Bbsc.ModEnabled(s))
+		{
+			// bb-start.exe starts bb-probe.exe itself: BBSC's mod goes in as soon as it appears.
+			_ = Bbsc.InjectModAsync(started, delegate(string line, bool ok)
+			{
+				base.Dispatcher.Invoke(() => ws.Log(line, ok ? LogLevel.Good : LogLevel.Bad));
+			});
+		}
 		if (text5 != null)
 		{
 			System.Windows.MessageBox.Show(this, text5, "Could not start the game", System.Windows.MessageBoxButton.OK, MessageBoxImage.Exclamation);

@@ -195,11 +195,11 @@ public abstract class LauncherPage : Page
 		return stackPanel;
 	}
 
-	protected FrameworkElement ComboRow(SymbolRegular icon, string title, string? hint, IReadOnlyList<Choice> choices, Func<string> get, Action<string> set, Panel? into = null, double width = 240.0, Action? changed = null, Func<Choice, bool>? enabled = null)
+	protected FrameworkElement ComboRow(SymbolRegular icon, string title, string? hint, IReadOnlyList<Choice> choices, Func<string> get, Action<string> set, Panel? into = null, double width = 240.0, Action? changed = null, Func<Choice, bool>? enabled = null, bool dropdown = false)
 	{
 		System.Windows.Controls.TextBlock note = null;
 		int num = choices.Sum((Choice c) => Segmented.Short(c.Label).Length);
-		if (!SettingRow.Classic)
+		if (!SettingRow.Classic && !dropdown)
 		{
 			int count = choices.Count;
 			if (count >= 2 && count <= 6 && num <= 72)

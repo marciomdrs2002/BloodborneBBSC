@@ -27,7 +27,8 @@ public static class Updater
 		}
 	}
 
-	public const string Repository = "Awakenchan/BloodBorneButPc";
+	// This project's own releases: the upstream launcher would replace the BBSC local server option.
+	public const string Repository = "marciomdrs2002/BloodborneBBSC";
 
 	public const string EngineId = "bbhost-0.4.0-fps66";
 
